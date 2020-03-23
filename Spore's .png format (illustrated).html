@@ -1,0 +1,50 @@
+<title>Spore's .png format (illustrated)</title>
+
+Well, the obvious just happened, and I found that my work on decoding Spore's image files was in vain. A couple of clever guys from <a href="http://forums.somethingawful.com/showthread.php?threadid=2886188">Something Awful</a> have reversed engineered Spore Creature Creator to gain insight on the way it encodes the creature models in .png files, and then<a href="http://null.ifies.com/scc.txt"> published a Python script </a>to decode them. Looking at the encoding algorithm (which includes encryption and permutation), I'm quite sure that I couldn't find it by just examining the image files, and reverse engineering was the right path.
+
+Following is a brief description on the steps taken by spore to encode a creature. Some of the details were omitted, just to make the big picture a bit clearer. If you know your way around Python, you may want to fill those missing details later.
+
+So, lets start with the basics. We are given a creature model, in text format (xml) and a image of the creature. The model file is about 30k in size, and the image's width and height are 128 pixels, making it 16384 pixels long. Each pixel is composed of 4 bytes (for red, green, blue and transparency channels), which makes the image 65536 bytes long. Each byte is composed of 8 bits, where the least significant bit, the one that changes the value of the byte the least, is called the LSB.
+
+<img src="http://bp1.blogger.com/_hDVLcOyq0vk/SJdMyRFHTDI/AAAAAAAAAEI/OZ22T2HAGOo/s320/pixelinbits.png">
+
+Now, that we have our definitions straight, we can turn to the encoding process itself.
+First, take the creature model, and compress it (using the deflate algorithm, nothing novel here). This usually shrinks the model size to less than 8192 bits (I'm really sorry for the Powerpoint graphics).
+
+<img src="http://bp3.blogger.com/_hDVLcOyq0vk/SJdN5XvZCwI/AAAAAAAAAEQ/rAST5CgL8Ow/s320/01compressed.png">
+
+Add to the compressed model a header, footer containing a strong <a href="http://en.wikipedia.org/wiki/Cyclic_redundancy_check">CRC</a> (to make sure you would not open an erroneous model) and pad it with zeros to make it exactly 8192 bits long.
+
+<img src="http://bp1.blogger.com/_hDVLcOyq0vk/SJdOtqIuvKI/AAAAAAAAAEY/nPsaBgSpBrA/s320/02paddedcompressed.png">
+
+Now, take the image and produce an encryption key using the value of its bytes. This is done by first applying a permutation on the image bytes, and then <a href="http://en.wikipedia.org/wiki/Scrambler">scrambling </a>them. The final encryption key is 8192 bits long.
+
+<img src="http://bp3.blogger.com/_hDVLcOyq0vk/SJdQBWEZR8I/AAAAAAAAAEg/RyKOl_T45M4/s320/03createkey.png">
+
+<a href="http://en.wikipedia.org/wiki/Exclusive_or">Xor</a> the compressed model bits with the key bits to produce an encrypted model. The thing to remember here is that given the key, you can simply Xor the encrypted bits again to gain the decrypted model.
+
+<img src="http://bp3.blogger.com/_hDVLcOyq0vk/SJdTQK_yceI/AAAAAAAAAE4/BX1YJME-bTI/s320/04encrypt.png">
+
+Replace the the LSBs of the bytes in the image with the encrypted model bits. Since there are 65536 bytes in the image, there are 65536/8=8192 LSBs, so we have enough room for the whole creature. One last twist, you don't just replace the n'th LSB with the n'th encrypted model bit. You actually have a premutation function, p, and change the p(n)'th image LSB with the n'th model bit. Since we are changing only the least significant bits, we may not notice any change change in the output picture at all.
+
+<img src="http://bp1.blogger.com/_hDVLcOyq0vk/SJdUZ2pJyQI/AAAAAAAAAFA/wU-55JBkZo0/s320/05encode.png">
+
+One thing to note - when we are creating the encryption key from the image, we don't use the image LSBs (as a matter of fact, we don't use the 3 least significant bits of each byte). This enables us to get the same encryption key from the encoded key as the one we got from the original image, even though we changed the LSBs.
+
+Using the image as the encryption key was a smart move from Maxis, since it disable the evil user from simply taking the LSBs in one image and replacing them with LSBs from another image, to create a creature that looks one way in Sporepedia, and another within Spore. A more sinister user might have encoded a model that would crash your computer within an innocent looking image (for example, he could create a model, that when compressed weighs less than 8192 bits, but when expanded, weighs hundreds of megabytes).
+
+So, is that all? Can we now encode the NSFW creature DonkeyPunch (by <a href="http://forums.somethingawful.com/showthread.php?threadid=2875991">Tastyhumanburgers</a>)
+
+<img src="http://bp3.blogger.com/_hDVLcOyq0vk/SJdb50UPNiI/AAAAAAAAAFY/x0gHlFadyO8/s320/Donkeypunch_censored.png">
+
+in the cute and lovely Crowned Laggie (by <a href="http://forums.somethingawful.com/showthread.php?threadid=2875991">vib rib</a>)?
+
+<img src="http://bp1.blogger.com/_hDVLcOyq0vk/SJdWwxTpwZI/AAAAAAAAAFQ/IJcPd64cC7E/s320/CrownedLaggie.png">
+
+The guys in SomethingAwful also published an encoding procedure, but it usually doesn't work. You can encode your creature in its own image, in a slightly changed version of its own image (you can move a pixel here, delete one there) and even encode the creature in a blank image. But you can't encode one creature in another's image.
+
+We are surely missing something, but I can't tell what, two possible guesses:
+1. Spore checks that the creature model resembles the creature in the image file. I doubt it, since you can encode a creature in a blank image.
+2. Spore doesn't use the 3 least significant bits in each byte when creating an encryption key for a reason. We know that one of the bits is used to encode the creature, could the other two be used to encode some kind of an additional checksum? I doubt that too, but this post is long enough without going into my reasons.
+
+Ideas?
